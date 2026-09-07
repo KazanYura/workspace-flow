@@ -1,0 +1,29 @@
+# DevFlow Orchestrator - Phase 2 smoke-test pipeline (no external tools required).
+# Run: devflow.exe docs/test_config.yaml
+# Task types: command | poll | gate
+
+thermal_monitor:
+  enabled: false
+
+pipeline:
+  - id: greet
+    name: "Say hello"
+    type: command
+    command: "echo Hello from DevFlow"
+
+  - id: wait_ready
+    name: "Simulated readiness poll"
+    type: poll
+    command: "exit 0"
+    retry_interval_sec: 1
+    max_retries: 3
+
+  - id: manual_gate
+    name: "Manual confirmation"
+    type: gate
+    message: "Pretend the 2FA prompt is done, then press Enter to continue."
+
+  - id: finish
+    name: "Finish up"
+    type: command
+    command: "echo Pipeline complete"

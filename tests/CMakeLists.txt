@@ -1,0 +1,15 @@
+add_executable(test_config_parser test_config_parser.cpp)
+target_link_libraries(test_config_parser PRIVATE devflow_core)
+add_test(NAME config_parser COMMAND test_config_parser)
+
+add_executable(test_subprocess test_subprocess.cpp)
+target_link_libraries(test_subprocess PRIVATE devflow_core)
+add_test(NAME subprocess COMMAND test_subprocess)
+
+add_executable(test_pipeline_runner test_pipeline_runner.cpp)
+target_link_libraries(test_pipeline_runner PRIVATE devflow_core)
+add_test(NAME pipeline_runner COMMAND test_pipeline_runner)
+
+add_executable(test_thermal_monitor test_thermal_monitor.cpp)
+target_link_libraries(test_thermal_monitor PRIVATE devflow_core)
+add_test(NAME thermal_monitor COMMAND test_thermal_monitor)

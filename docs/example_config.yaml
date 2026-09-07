@@ -1,0 +1,48 @@
+# DevFlow Orchestrator Configuration (Windows)
+# Task types: command | poll | gate
+
+thermal_monitor:
+  enabled: true
+  poll_interval_sec: 5
+  warning_temp_c: 80
+  critical_temp_c: 90
+  # Process image names to suspend/terminate when the critical threshold is breached.
+  throttle_targets:
+    - "slack.exe"
+    - "chrome.exe"
+    - "Code.exe" # VS Code renderer / file watcher
+
+pipeline:
+  - id: step_unlock_drive
+    name: "Unlock Encrypted Volume"
+    type: command
+    command: "powershell -NoProfile -File scripts\\unlock_drive.ps1"
+    timeout_sec: 30
+
+  - id: step_start_docker
+    name: "Initialize Docker Daemon"
+    type: poll
+    command: "docker info"
+    retry_interval_sec: 2
+    max_retries: 15
+
+  - id: step_cisco_vpn
+    name: "Cisco AnyConnect Authentication"
+    type: gate
+    message: "VPN client launched. Enter the 2FA code, then click Continue to proceed."
+    pre_command: "\"C:\\Program Files (x86)\\Cisco\\Cisco Secure Client\\vpnui.exe\""
+
+  - id: step_launch_devcontainer
+    name: "Launch VS Code Dev Container"
+    type: command
+    command: "code --folder-uri vscode-remote://dev-container+..."
+
+  - id: step_pull_changes
+    name: "Git Pull Latest"
+    type: command
+    command: "git -C C:\\dev\\repo pull origin main"
+
+  - id: step_rebuild_container
+    name: "Rebuild Dev Container"
+    type: command
+    command: "devcontainer up --workspace-folder C:\\dev\\repo"

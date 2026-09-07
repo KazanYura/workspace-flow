@@ -1,0 +1,54 @@
+# DevFlow Orchestrator - Demo Configuration (Windows)
+#
+# A self-contained pipeline that runs only harmless, built-in Windows commands
+# so you can validate the orchestrator end-to-end without any external tooling.
+# Every command runs through `cmd.exe /C`.
+#
+# Try it:
+#   devflow.exe docs/demo_config.yaml            # full run (has one gate)
+#   devflow.exe docs/demo_config.yaml --dry-run  # parse + print only
+#
+# Task types: command | poll | gate
+
+thermal_monitor:
+  enabled: true
+  poll_interval_sec: 3
+  warning_temp_c: 75
+  critical_temp_c: 90
+  throttle_targets:
+    - "chrome.exe"
+
+pipeline:
+  - id: greet
+    name: "Print Welcome Banner"
+    type: command
+    command: "echo === DevFlow demo starting ==="
+
+  - id: check_os
+    name: "Report Windows Version"
+    type: command
+    command: "ver"
+    timeout_sec: 10
+
+  - id: simulate_work
+    name: "Simulate Startup Delay"
+    type: command
+    command: "ping -n 2 127.0.0.1 >nul"
+    timeout_sec: 15
+
+  - id: wait_for_tool
+    name: "Probe for cmd.exe on PATH"
+    type: poll
+    command: "where cmd"
+    retry_interval_sec: 1
+    max_retries: 5
+
+  - id: confirm_ready
+    name: "Manual Confirmation Gate"
+    type: gate
+    message: "Pre-flight checks passed. Press Enter to finish (or type 'abort')."
+
+  - id: done
+    name: "Print Completion Banner"
+    type: command
+    command: "echo === DevFlow demo complete ==="

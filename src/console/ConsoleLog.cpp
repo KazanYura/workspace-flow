@@ -1,6 +1,7 @@
 #include "devflow/console/ConsoleLog.hpp"
 
 #include <iostream>
+#include <fstream>
 #include <memory>
 #include <mutex>
 #include <string_view>
@@ -36,6 +37,19 @@ LogSink make_console_log_sink() {
         } else {
             std::cout << colorize(line, color) << '\n';
         }
+    };
+}
+
+LogSink make_file_log_sink(const std::string& path) {
+    auto mutex = std::make_shared<std::mutex>();
+    auto file = std::make_shared<std::ofstream>(path, std::ios::app);
+    if (!*file) {
+        return {};
+    }
+    return [mutex, file](std::string_view line) {
+        const std::scoped_lock lock(*mutex);
+        *file << line << '\n';
+        file->flush();
     };
 }
 

@@ -49,6 +49,7 @@ struct DashboardState {
     bool gate_continue_requested = false;
 
     bool pipeline_finished = false;
+    bool dark_theme = true;
 };
 
 }  // namespace devflow::gui

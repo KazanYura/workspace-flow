@@ -29,9 +29,20 @@ void PipelineRunner::log(std::string_view line) const {
     if (log_) log_(line);
 }
 
-TaskOutcome PipelineRunner::run_command(const Task& task, const CommandTask& action) const {
+TaskOutcome PipelineRunner::run_command(const Task& task, const CommandTask& action,
+                                         std::optional<int> timeout_sec) const {
     log(std::format("  running command: {}", action.command));
-    const ProcessResult res = run_process(action.command, action.timeout_sec);
+    ProcessResult res;
+    const int attempts = action.max_retries > 0 ? action.max_retries : 1;
+    for (int attempt = 1; attempt <= attempts; ++attempt) {
+        res = run_process(action.command, timeout_sec ? timeout_sec : action.timeout_sec,
+                          action.shell);
+        if (res.succeeded() || res.timed_out || attempt == attempts) break;
+        log(std::format("  command attempt {}/{} failed", attempt, attempts));
+        if (action.retry_interval_sec > 0) {
+            std::this_thread::sleep_for(std::chrono::seconds(action.retry_interval_sec));
+        }
+    }
 
     if (!res.output.empty()) {
         log(res.output);
@@ -50,7 +61,8 @@ TaskOutcome PipelineRunner::run_command(const Task& task, const CommandTask& act
 }
 
 TaskOutcome PipelineRunner::run_poll(const Task& task, const PollTask& action,
-                                     std::stop_token stop) const {
+                                     std::stop_token stop,
+                                     std::optional<int> timeout_sec) const {
     const int max_retries = action.max_retries > 0 ? action.max_retries : 1;
     const int interval = action.retry_interval_sec > 0 ? action.retry_interval_sec : 0;
 
@@ -59,7 +71,7 @@ TaskOutcome PipelineRunner::run_poll(const Task& task, const PollTask& action,
             return {task.id, TaskStatus::Failed, "stopped"};
         }
         log(std::format("  poll attempt {}/{}: {}", attempt, max_retries, action.command));
-        const ProcessResult res = run_process(action.command);
+        const ProcessResult res = run_process(action.command, timeout_sec, action.shell);
         if (res.succeeded()) {
             return {task.id, TaskStatus::Succeeded,
                     std::format("ready after {} attempt(s)", attempt)};
@@ -88,11 +100,18 @@ TaskOutcome PipelineRunner::run_gate(const Task& task, const GateTask& action) c
                          : TaskOutcome{task.id, TaskStatus::Failed, "aborted by user"};
 }
 
-PipelineResult PipelineRunner::run(const std::vector<Task>& pipeline, std::stop_token stop) {
+PipelineResult PipelineRunner::run(const std::vector<Task>& pipeline, std::stop_token stop,
+                                   std::optional<int> timeout_sec, bool continue_on_error) {
     PipelineResult result;
     result.outcomes.reserve(pipeline.size());
 
     bool aborted = false;
+    bool failed = false;
+    std::vector<const CommandTask*> completed_commands;
+    const auto deadline = timeout_sec && *timeout_sec > 0
+                              ? std::optional{std::chrono::steady_clock::now() +
+                                              std::chrono::seconds(*timeout_sec)}
+                              : std::nullopt;
     for (const Task& task : pipeline) {
         if (aborted || stop.stop_requested()) {
             TaskOutcome skipped{task.id, TaskStatus::Skipped,
@@ -106,25 +125,66 @@ PipelineResult PipelineRunner::run(const std::vector<Task>& pipeline, std::stop_
         log(std::format("[{}] {} ({})", task.id, task.name, task_type_name(task.action)));
         if (progress_) progress_({task.id, TaskStatus::Running, ""});
 
+        if (deadline && std::chrono::steady_clock::now() >= *deadline) {
+            TaskOutcome timed_out{task.id, TaskStatus::Failed, "pipeline timeout exceeded"};
+            if (progress_) progress_(timed_out);
+            result.outcomes.push_back(std::move(timed_out));
+            aborted = true;
+            failed = true;
+            continue;
+        }
+        const auto task_started = std::chrono::steady_clock::now();
+        const auto remaining_timeout = [&]() -> std::optional<int> {
+            if (!deadline) return std::nullopt;
+            const auto remaining = std::chrono::duration_cast<std::chrono::seconds>(
+                *deadline - std::chrono::steady_clock::now()).count();
+            return static_cast<int>(remaining > 0 ? remaining : 1);
+        };
         TaskOutcome outcome = std::visit([&](const auto& action) -> TaskOutcome {
             using T = std::decay_t<decltype(action)>;
             if constexpr (std::is_same_v<T, CommandTask>) {
-                return run_command(task, action);
+                return run_command(task, action, remaining_timeout());
             } else if constexpr (std::is_same_v<T, PollTask>) {
-                return run_poll(task, action, stop);
+                return run_poll(task, action, stop, remaining_timeout());
             } else {
                 return run_gate(task, action);  // GateTask
             }
         }, task.action);
+        outcome.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - task_started).count();
 
-        log(std::format("  -> {}: {}", to_string(outcome.status), outcome.detail));
+        log(std::format("  -> {}: {} ({} ms)", to_string(outcome.status), outcome.detail,
+                        outcome.duration_ms));
         if (progress_) progress_(outcome);
 
-        if (outcome.status == TaskStatus::Failed) aborted = true;
+        if (outcome.status == TaskStatus::Succeeded) {
+            if (const auto* command = std::get_if<CommandTask>(&task.action);
+                command && command->undo_command) {
+                completed_commands.push_back(command);
+            }
+        }
+
+        if (outcome.status == TaskStatus::Failed) {
+            failed = true;
+            if (!continue_on_error) aborted = true;
+        }
         result.outcomes.push_back(std::move(outcome));
     }
 
-    result.ok = !aborted;
+    if (failed) {
+        for (auto it = completed_commands.rbegin(); it != completed_commands.rend(); ++it) {
+            log(std::format("  rollback: {}", *(*it)->undo_command));
+            const ProcessResult rollback = run_process(*(*it)->undo_command);
+            if (!rollback.output.empty()) log(rollback.output);
+            if (!rollback.succeeded()) {
+                log(std::format("  rollback failed: {}", rollback.error.empty()
+                                                           ? std::format("exit code {}", rollback.exit_code)
+                                                           : rollback.error));
+            }
+        }
+    }
+
+    result.ok = !failed && !aborted;
     return result;
 }
 

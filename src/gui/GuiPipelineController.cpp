@@ -5,7 +5,9 @@
 #include <variant>
 
 #include "devflow/config/ConfigParser.hpp"
+#include "devflow/pipeline/Subprocess.hpp"
 #include "devflow/thermal/ProcessControl.hpp"
+#include "devflow/thermal/CompositeTemperatureSensor.hpp"
 #include "devflow/thermal/WmiTemperatureSensor.hpp"
 
 #ifdef _WIN32
@@ -165,7 +167,7 @@ void GuiPipelineController::start() {
     running_.store(true);
 
     monitor_ = std::make_unique<ThermalMonitor>(
-        config_->thermal, make_wmi_sensor(),
+        config_->thermal, make_temperature_sensor(),
         [this](std::string_view line) { on_log(line); },
         [this](MitigationAction action, const std::vector<std::string>& targets) {
             mitigate(action, targets);
@@ -196,7 +198,15 @@ void GuiPipelineController::run_pipeline(const std::vector<Task>& pipeline, std:
         [this, stop](const GateTask& gate) { return wait_gate(gate, stop); },
         [this](const TaskOutcome& outcome) { on_progress(outcome); });
 
-    const PipelineResult result = runner.run(pipeline, stop);
+    const PipelineResult result = runner.run(pipeline, stop,
+                                             config_->pipeline_timeout_sec,
+                                             config_->continue_on_error);
+    if (!result.ok && config_->on_failure_command) {
+        if (!launch_detached(*config_->on_failure_command)) {
+            on_log(std::format("[pipeline] failed to launch on_failure_command: {}",
+                               *config_->on_failure_command));
+        }
+    }
     on_log(result.ok ? "[pipeline] SUCCEEDED" : "[pipeline] FAILED");
     finished_.store(true);
     running_.store(false);

@@ -4,6 +4,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <deque>
+#include <fstream>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -103,6 +104,7 @@ private:
     RollingAverage average_window_;
     bool throttled_ = false;
     bool warned_unavailable_ = false;
+    std::ofstream readings_csv_;
 
     std::atomic<ThermalLevel> level_{ThermalLevel::Normal};
     std::atomic<double> average_{0.0};

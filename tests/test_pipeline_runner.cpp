@@ -2,6 +2,7 @@
 // Uses cmd.exe built-ins so no external tools are required.
 
 #include <cstdio>
+#include <algorithm>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -104,6 +105,38 @@ int main() {
         const PipelineResult res = runner.run(pipeline);
         check(!res.ok, "aborted gate not ok");
         check(res.outcomes[0].status == TaskStatus::Failed, "gate failed on abort");
+    }
+
+    // Continue-on-error records the failure and still executes later tasks.
+    {
+        std::vector<Task> pipeline;
+        pipeline.push_back(command_task("failed", "exit 3"));
+        pipeline.push_back(command_task("after", "exit 0"));
+
+        PipelineRunner runner(silent, auto_confirm);
+        const PipelineResult res = runner.run(pipeline, {}, std::nullopt, true);
+        check(!res.ok, "continue-on-error remains unsuccessful");
+        check(res.outcomes.size() == 2, "continue-on-error runs later task");
+        check(res.outcomes[1].status == TaskStatus::Succeeded,
+              "continue-on-error later task succeeds");
+    }
+
+    // Successful command undo actions run in reverse order after a later failure.
+    {
+        std::vector<std::string> lines;
+        const LogSink capture = [&lines](std::string_view line) {
+            lines.emplace_back(line);
+        };
+        Task first = command_task("first", "exit 0");
+        std::get<CommandTask>(first.action).undo_command = "echo undo-first";
+        std::vector<Task> pipeline{first, command_task("failed", "exit 4")};
+
+        PipelineRunner runner(capture, auto_confirm);
+        const PipelineResult res = runner.run(pipeline);
+        check(!res.ok, "rollback pipeline remains failed");
+        check(std::any_of(lines.begin(), lines.end(), [](const std::string& line) {
+                  return line.find("rollback: echo undo-first") != std::string::npos;
+              }), "rollback command executed");
     }
 
     if (g_failures == 0) {

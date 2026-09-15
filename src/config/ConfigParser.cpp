@@ -1,6 +1,7 @@
 #include "devflow/config/ConfigParser.hpp"
 
 #include <fstream>
+#include <cstdlib>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -13,6 +14,30 @@ namespace {
 
 ParseError make_error(std::string message) {
     return ParseError{std::move(message)};
+}
+
+std::optional<std::string> expand_environment(std::string_view value, std::string& error) {
+    std::string expanded;
+    for (std::size_t index = 0; index < value.size();) {
+        if (value[index] != '$' || index + 1 >= value.size() || value[index + 1] != '{') {
+            expanded.push_back(value[index++]);
+            continue;
+        }
+        const std::size_t end = value.find('}', index + 2);
+        if (end == std::string_view::npos || end == index + 2) {
+            error = "invalid environment variable expression";
+            return std::nullopt;
+        }
+        const std::string name{value.substr(index + 2, end - index - 2)};
+        const char* resolved = std::getenv(name.c_str());
+        if (!resolved) {
+            error = "environment variable '" + name + "' is not defined";
+            return std::nullopt;
+        }
+        expanded += resolved;
+        index = end + 1;
+    }
+    return expanded;
 }
 
 // Read an entire file as raw UTF-8 bytes.
@@ -45,6 +70,9 @@ std::optional<ThermalConfig> parse_thermal(const YAML::Node& node, std::string& 
             cfg.throttle_targets.push_back(item.as<std::string>());
         }
     }
+    if (node["readings_csv_path"]) {
+        cfg.readings_csv_path = node["readings_csv_path"].as<std::string>();
+    }
     return cfg;
 }
 
@@ -75,8 +103,20 @@ std::optional<Task> parse_task(const YAML::Node& node, std::string& error) {
             error = "command task '" + task.id + "' is missing 'command'";
             return std::nullopt;
         }
-        action.command = node["command"].as<std::string>();
+        auto command = expand_environment(node["command"].as<std::string>(), error);
+        if (!command) return std::nullopt;
+        action.command = std::move(*command);
+        if (node["undo_command"]) {
+            auto undo = expand_environment(node["undo_command"].as<std::string>(), error);
+            if (!undo) return std::nullopt;
+            action.undo_command = std::move(*undo);
+        }
         if (node["timeout_sec"]) action.timeout_sec = node["timeout_sec"].as<int>();
+        if (node["shell"]) action.shell = node["shell"].as<bool>();
+        if (node["max_retries"]) action.max_retries = node["max_retries"].as<int>();
+        if (node["retry_interval_sec"]) {
+            action.retry_interval_sec = node["retry_interval_sec"].as<int>();
+        }
         task.action = std::move(action);
     } else if (type == "poll") {
         PollTask action;
@@ -84,9 +124,12 @@ std::optional<Task> parse_task(const YAML::Node& node, std::string& error) {
             error = "poll task '" + task.id + "' is missing 'command'";
             return std::nullopt;
         }
-        action.command = node["command"].as<std::string>();
+        auto command = expand_environment(node["command"].as<std::string>(), error);
+        if (!command) return std::nullopt;
+        action.command = std::move(*command);
         if (node["retry_interval_sec"]) action.retry_interval_sec = node["retry_interval_sec"].as<int>();
         if (node["max_retries"]) action.max_retries = node["max_retries"].as<int>();
+        if (node["shell"]) action.shell = node["shell"].as<bool>();
         task.action = std::move(action);
     } else if (type == "gate") {
         GateTask action;
@@ -95,7 +138,11 @@ std::optional<Task> parse_task(const YAML::Node& node, std::string& error) {
             return std::nullopt;
         }
         action.message = node["message"].as<std::string>();
-        if (node["pre_command"]) action.pre_command = node["pre_command"].as<std::string>();
+        if (node["pre_command"]) {
+            auto pre_command = expand_environment(node["pre_command"].as<std::string>(), error);
+            if (!pre_command) return std::nullopt;
+            action.pre_command = std::move(*pre_command);
+        }
         task.action = std::move(action);
     } else {
         error = "task '" + task.id + "' has unknown type '" + type +
@@ -123,6 +170,18 @@ ParseResult parse_config_string(std::string_view yaml) {
             return make_error(std::move(sub_error));
         }
         config.thermal = std::move(*thermal);
+        if (root["on_failure_command"]) {
+            auto on_failure = expand_environment(root["on_failure_command"].as<std::string>(),
+                                                 sub_error);
+            if (!on_failure) return make_error(std::move(sub_error));
+            config.on_failure_command = std::move(*on_failure);
+        }
+        if (root["pipeline_timeout_sec"]) {
+            config.pipeline_timeout_sec = root["pipeline_timeout_sec"].as<int>();
+        }
+        if (root["continue_on_error"]) {
+            config.continue_on_error = root["continue_on_error"].as<bool>();
+        }
 
         const auto pipeline = root["pipeline"];
         if (!pipeline || !pipeline.IsSequence()) {
@@ -136,6 +195,14 @@ ParseResult parse_config_string(std::string_view yaml) {
             config.pipeline.push_back(std::move(*task));
         }
 
+        const auto validation_errors = config.validate();
+        if (!validation_errors.empty()) {
+            std::string message = "invalid configuration:";
+            for (const auto& validation_error : validation_errors) {
+                message += "\n- " + validation_error;
+            }
+            return make_error(std::move(message));
+        }
         return config;
     } catch (const YAML::Exception& e) {
         // Convert library exceptions into a value at the boundary.

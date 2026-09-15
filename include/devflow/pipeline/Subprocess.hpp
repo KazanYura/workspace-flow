@@ -23,7 +23,8 @@ struct ProcessResult {
 // waiting for exit. timeout_sec absent or <= 0 => wait indefinitely; otherwise
 // the child is terminated once it elapses and timed_out is set.
 [[nodiscard]] ProcessResult run_process(std::string_view command_line,
-                                        std::optional<int> timeout_sec = std::nullopt);
+                                        std::optional<int> timeout_sec = std::nullopt,
+                                        bool shell = true);
 
 // Launch a process detached: no capture, no wait, returns once it has started.
 // Used for a gate's pre_command (e.g., a VPN GUI). Returns launch success.

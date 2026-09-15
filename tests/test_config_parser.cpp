@@ -25,19 +25,24 @@ void check(bool condition, std::string_view what) {
 int main() {
     constexpr std::string_view kValidYaml = R"(
 thermal_monitor:
-  enabled: true
-  poll_interval_sec: 5
-  warning_temp_c: 80
-  critical_temp_c: 90
-  throttle_targets:
-    - "chrome.exe"
-    - "Code.exe"
+    enabled: true
+    poll_interval_sec: 5
+    warning_temp_c: 80
+    critical_temp_c: 90
+    readings_csv_path: "thermal.csv"
+    throttle_targets:
+        - "chrome.exe"
+        - "Code.exe"
 
+pipeline_timeout_sec: 30
+on_failure_command: "echo failed"
+continue_on_error: true
 pipeline:
   - id: step_cmd
     name: "Run command"
     type: command
     command: "git pull"
+    undo_command: "echo undo pull"
     timeout_sec: 30
   - id: step_poll
     name: "Wait for docker"
@@ -59,6 +64,10 @@ pipeline:
         check(c->thermal.warning_temp_c == 80, "warning_temp_c parsed");
         check(c->thermal.critical_temp_c == 90, "critical_temp_c parsed");
         check(c->thermal.throttle_targets.size() == 2, "two throttle targets");
+        check(c->thermal.readings_csv_path.has_value(), "CSV path parsed");
+        check(c->pipeline_timeout_sec == 30, "pipeline timeout parsed");
+        check(c->on_failure_command == "echo failed", "failure command parsed");
+        check(c->continue_on_error, "continue_on_error parsed");
         check(c->pipeline.size() == 3, "three tasks parsed");
 
         check(std::holds_alternative<CommandTask>(c->pipeline[0].action), "task 0 is command");
@@ -68,6 +77,7 @@ pipeline:
         const auto& cmd = std::get<CommandTask>(c->pipeline[0].action);
         check(cmd.command == "git pull", "command text parsed");
         check(cmd.timeout_sec.has_value() && *cmd.timeout_sec == 30, "timeout_sec parsed");
+        check(cmd.undo_command == "echo undo pull", "undo_command parsed");
 
         const auto& poll = std::get<PollTask>(c->pipeline[1].action);
         check(poll.max_retries == 15, "max_retries parsed");
@@ -77,6 +87,9 @@ pipeline:
         check(gate.message == "Approve 2FA", "gate message parsed");
         check(gate.pre_command.has_value(), "gate pre_command parsed");
     } else {
+        if (const auto* error = std::get_if<ParseError>(&happy)) {
+            std::fprintf(stderr, "parse error: %s\n", error->message.c_str());
+        }
         check(false, "valid config should parse");
     }
 
@@ -89,6 +102,26 @@ pipeline:
     check(std::holds_alternative<ParseError>(
               parse_config_string("pipeline:\n  - id: x\n    type: command\n")),
           "command task without 'command' rejected");
+
+        check(std::holds_alternative<ParseError>(parse_config_string(R"(
+thermal_monitor:
+    warning_temp_c: 95
+    critical_temp_c: 90
+pipeline:
+    - id: x
+        type: command
+        command: "echo ok"
+)")), "invalid thermal range rejected");
+
+        check(std::holds_alternative<ParseError>(parse_config_string(R"(
+pipeline:
+    - id: duplicate
+        type: command
+        command: "echo one"
+    - id: duplicate
+        type: command
+        command: "echo two"
+)")), "duplicate task id rejected");
 
     if (g_failures == 0) {
         std::puts("all tests passed");

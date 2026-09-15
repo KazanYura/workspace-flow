@@ -12,7 +12,13 @@ namespace devflow {
 // Launch a process and wait for it to exit (success == exit code 0).
 struct CommandTask {
     std::string command;
+    std::optional<std::string> undo_command;
     std::optional<int> timeout_sec;  // absent => wait indefinitely
+    // false => run the executable directly (argv from command_line, no shell
+    // metacharacter interpretation); avoids injection via untrusted config values.
+    bool shell = true;
+    int max_retries = 1;          // re-run on failure this many times total
+    int retry_interval_sec = 0;   // delay between retries
 };
 
 // Run a readiness probe on a loop until it succeeds or retries are exhausted.
@@ -20,6 +26,7 @@ struct PollTask {
     std::string command;
     int retry_interval_sec = 2;
     int max_retries = 10;
+    bool shell = true;  // see CommandTask::shell
 };
 
 // Pause the pipeline for explicit user confirmation (e.g., 2FA).

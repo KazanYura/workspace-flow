@@ -24,7 +24,18 @@ ThermalMonitor::ThermalMonitor(ThermalConfig config,
       sensor_(std::move(sensor)),
       log_(std::move(log)),
       mitigate_(std::move(mitigate)),
-      average_window_(rolling_window) {}
+      average_window_(rolling_window) {
+    if (config_.readings_csv_path) {
+        readings_csv_.open(*config_.readings_csv_path, std::ios::app);
+        if (readings_csv_ && readings_csv_.tellp() == std::streampos{0}) {
+            readings_csv_ << "timestamp,raw_c,average_c,level\n";
+        }
+        if (!readings_csv_) {
+            log(std::format("[thermal] unable to open readings CSV: {}",
+                            *config_.readings_csv_path));
+        }
+    }
+}
 
 ThermalMonitor::~ThermalMonitor() {
     stop();
@@ -99,6 +110,13 @@ void ThermalMonitor::sample_once() {
 
     log(std::format("[thermal] {:.1f}C (avg {:.1f}C) [{}]",
                     *reading, average, to_string(current)));
+    if (readings_csv_) {
+        const auto timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        readings_csv_ << timestamp << ',' << *reading << ',' << average << ','
+                      << to_string(current) << '\n';
+        readings_csv_.flush();
+    }
 
     if (current == ThermalLevel::Critical && !throttled_) {
         log(std::format("[thermal] CRITICAL: avg {:.1f}C >= {}C",

@@ -1,5 +1,8 @@
 #pragma once
 
+#include <optional>
+#include <string>
+
 #include "devflow/common/Logging.hpp"
 
 namespace devflow {
@@ -8,5 +11,6 @@ namespace devflow {
 // PipelineRunner (main thread) and ThermalMonitor (telemetry thread) share one
 // instance so their output never interleaves mid-line.
 [[nodiscard]] LogSink make_console_log_sink();
+[[nodiscard]] LogSink make_file_log_sink(const std::string& path);
 
 }  // namespace devflow

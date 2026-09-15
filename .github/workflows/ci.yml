@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache FetchContent dependencies
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: ${{ runner.os }}-deps-${{ hashFiles('CMakeLists.txt') }}
+
+      - name: Configure (console/core only, Debug for coverage symbols)
+        run: cmake -B build -S . -DDEVFLOW_BUILD_GUI=OFF -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build build --config Debug
+
+      - name: Install OpenCppCoverage
+        run: choco install OpenCppCoverage -y
+
+      - name: Run tests with coverage
+        shell: cmd
+        run: |
+          "C:\Program Files\OpenCppCoverage\OpenCppCoverage.exe" ^
+            --sources src --sources include ^
+            --excluded_sources build\_deps ^
+            --export_type cobertura:coverage.xml ^
+            -- ctest --test-dir build -C Debug --output-on-failure
+
+      - name: Upload test logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-logs
+          path: build/Testing/Temporary/LastTest.log
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false

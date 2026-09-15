@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -13,6 +14,8 @@ struct ThermalConfig {
     int critical_temp_c = 90;
     // Process image names to suspend/terminate on a critical breach.
     std::vector<std::string> throttle_targets;
+    // Append a timestamp,raw_c,avg_c,level row per sample when set.
+    std::optional<std::string> readings_csv_path;
 };
 
 }  // namespace devflow

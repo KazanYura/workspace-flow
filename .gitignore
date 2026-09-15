@@ -2,7 +2,8 @@
 build/
 out/
 cmake-build-*/
-
+build_ci_test/
+build_gui_test/
 # IDE / tooling
 .vs/
 .idea/

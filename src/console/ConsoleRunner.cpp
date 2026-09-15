@@ -23,11 +23,12 @@ bool prompt_at_gate(const GateTask& gate) {
 
 }  // namespace
 
-int execute_pipeline(const std::vector<Task>& pipeline, const LogSink& log) {
+int execute_pipeline(const std::vector<Task>& pipeline, const LogSink& log,
+                     std::optional<int> timeout_sec, bool continue_on_error) {
     std::cout << '\n' << colorize("--- Executing pipeline ---", Color::Bold) << '\n';
     PipelineRunner runner(log, prompt_at_gate);
 
-    const auto result = runner.run(pipeline);
+    const auto result = runner.run(pipeline, {}, timeout_sec, continue_on_error);
     const std::string_view verdict = result.ok ? "SUCCEEDED" : "FAILED";
     std::cout << "\nPipeline "
               << colorize(verdict, result.ok ? Color::Green : Color::Red) << ".\n";

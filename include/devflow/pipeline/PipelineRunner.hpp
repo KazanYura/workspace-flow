@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
+#include <optional>
 #include <stop_token>
 #include <string>
 #include <string_view>
@@ -19,6 +21,7 @@ struct TaskOutcome {
     std::string id;
     TaskStatus status = TaskStatus::Pending;
     std::string detail;  // human-readable reason
+    std::int64_t duration_ms = 0;
 };
 
 struct PipelineResult {
@@ -41,13 +44,17 @@ public:
     PipelineRunner(LogSink log, GateHandler gate, ProgressObserver progress = {});
 
     [[nodiscard]] PipelineResult run(const std::vector<Task>& pipeline,
-                                     std::stop_token stop = {});
+                                     std::stop_token stop = {},
+                                     std::optional<int> timeout_sec = std::nullopt,
+                                     bool continue_on_error = false);
 
 private:
     void log(std::string_view line) const;
-    [[nodiscard]] TaskOutcome run_command(const Task& task, const CommandTask& action) const;
+    [[nodiscard]] TaskOutcome run_command(const Task& task, const CommandTask& action,
+                                          std::optional<int> timeout_sec) const;
     [[nodiscard]] TaskOutcome run_poll(const Task& task, const PollTask& action,
-                                       std::stop_token stop) const;
+                                       std::stop_token stop,
+                                       std::optional<int> timeout_sec) const;
     [[nodiscard]] TaskOutcome run_gate(const Task& task, const GateTask& action) const;
 
     LogSink log_;

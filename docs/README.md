@@ -39,5 +39,8 @@ The first deliverable is a **console application** — no GUI. It reads the YAML
 * **Toolchain:** MSVC (Visual Studio 2022) or clang-cl, C++20.
 * **Build:** CMake with `FetchContent` for all dependencies — no system package manager required.
 
+## 📋 Known Gaps & Future Work
+See [MISSING_FEATURES.md](MISSING_FEATURES.md) for gaps worth prioritizing (security, validation, error recovery, logging, GUI completion, test coverage) and [NICE_TO_HAVE.md](NICE_TO_HAVE.md) for lower-priority polish and enhancements.
+
 ## 🤖 How to Use This Project with AI (Cursor / Copilot / Claude)
 This directory contains the foundational context documents for this project. When starting a new AI chat on a fresh codebase, feed [AI_CONTEXT.md](AI_CONTEXT.md) to the AI first. This sets the persona, technology stack, and architectural constraints. Then follow the phases in [ROADMAP.md](ROADMAP.md) sequentially to build the application without overwhelming the AI context window. See [ARCHITECTURE.md](ARCHITECTURE.md) for module boundaries and [example_config.yaml](example_config.yaml) for a working pipeline definition.

@@ -35,14 +35,32 @@ std::wstring utf8_to_wide(std::string_view utf8) {
     return wide;
 }
 
-// Numeric form keeps us off the localized FormatMessage boundary for the MVP.
 std::string win32_error(DWORD code) {
-    return "Win32 error " + std::to_string(code);
+    wchar_t* buffer = nullptr;
+    const DWORD flags = FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
+                        FORMAT_MESSAGE_IGNORE_INSERTS;
+    const DWORD length = ::FormatMessageW(flags, nullptr, code, 0,
+                                          reinterpret_cast<LPWSTR>(&buffer), 0, nullptr);
+    if (length == 0 || buffer == nullptr) {
+        return "Win32 error " + std::to_string(code);
+    }
+    std::wstring message(buffer, length);
+    ::LocalFree(buffer);
+    while (!message.empty() && (message.back() == L'\r' || message.back() == L'\n')) {
+        message.pop_back();
+    }
+    std::string result;
+    result.reserve(message.size());
+    for (const wchar_t character : message) {
+        result.push_back(character >= 0 && character <= 127 ? static_cast<char>(character) : '?');
+    }
+    return result + " (" + std::to_string(code) + ")";
 }
 
 }  // namespace
 
-ProcessResult run_process(std::string_view command_line, std::optional<int> timeout_sec) {
+ProcessResult run_process(std::string_view command_line, std::optional<int> timeout_sec,
+                          bool shell) {
     ProcessResult result;
 
     SECURITY_ATTRIBUTES sa{};
@@ -68,8 +86,8 @@ ProcessResult run_process(std::string_view command_line, std::optional<int> time
     si.hStdOutput = write_end.get();
     si.hStdError = write_end.get();
 
-    // Route through cmd.exe /C so .cmd/.bat scripts and shell built-ins resolve.
-    std::wstring cmd = L"cmd.exe /C " + utf8_to_wide(command_line);
+    std::wstring cmd = shell ? L"cmd.exe /C " + utf8_to_wide(command_line)
+                             : utf8_to_wide(command_line);
 
     PROCESS_INFORMATION pi{};
     const BOOL ok = ::CreateProcessW(nullptr, cmd.data(), nullptr, nullptr,

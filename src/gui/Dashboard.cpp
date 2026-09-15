@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cfloat>
+#include <cstring>
+#include <string>
 
 #include <imgui.h>
 
@@ -86,8 +88,21 @@ void render_tasks(const DashboardState& state) {
 
 void render_logs(const DashboardState& state) {
     ImGui::SeparatorText("Logs");
+    static char filter[128] = {};
+    ImGui::InputTextWithHint("##log_filter", "Filter logs", filter, sizeof(filter));
+    const std::string_view needle{filter};
     if (ImGui::BeginChild("logs", ImVec2(0.0f, 0.0f), ImGuiChildFlags_Border)) {
-        ImGui::TextUnformatted(state.logs.c_str());
+        std::size_t start = 0;
+        while (start <= state.logs.size()) {
+            const std::size_t end = state.logs.find('\n', start);
+            const std::string_view line = state.logs.substr(
+                start, end == std::string::npos ? std::string::npos : end - start);
+            if (needle.empty() || line.find(needle) != std::string_view::npos) {
+                ImGui::TextUnformatted(line.data(), line.data() + line.size());
+            }
+            if (end == std::string::npos) break;
+            start = end + 1;
+        }
         // Keep the newest lines in view while the user has not scrolled up.
         if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
             ImGui::SetScrollHereY(1.0f);
@@ -121,6 +136,14 @@ void render_gate(DashboardState& state) {
 void render_toolbar(DashboardState& state) {
     const bool busy = state.running;
 
+    if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O)) {
+        state.request_open = true;
+    }
+    if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_R) && !busy &&
+        state.has_config) {
+        state.request_run = true;
+    }
+
     ImGui::BeginDisabled(busy);
     if (ImGui::Button("Open YAML\xE2\x80\xA6")) {
         state.request_open = true;
@@ -148,11 +171,25 @@ void render_toolbar(DashboardState& state) {
     if (!state.status_message.empty()) {
         ImGui::TextUnformatted(state.status_message.c_str());
     }
+
+    ImGui::SameLine();
+    if (ImGui::Button(state.dark_theme ? "Light theme" : "Dark theme")) {
+        state.dark_theme = !state.dark_theme;
+    }
 }
 
 }  // namespace
 
 void render_dashboard(DashboardState& state) {
+    static bool previous_dark_theme = true;
+    if (state.dark_theme != previous_dark_theme) {
+        if (state.dark_theme) {
+            ImGui::StyleColorsDark();
+        } else {
+            ImGui::StyleColorsLight();
+        }
+        previous_dark_theme = state.dark_theme;
+    }
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
     ImGui::SetNextWindowSize(viewport->WorkSize);

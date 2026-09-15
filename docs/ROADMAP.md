@@ -37,3 +37,6 @@ To build this project efficiently using AI assistance, implement the features st
 2. Ensure thread safety (mutex-guarded log queues, atomics for task state and gate resolution).
 3. Add a Windows system tray icon (`Shell_NotifyIcon`) so the app can hide in the background.
 4. Add auto-start via the `Run` registry key or Task Scheduler, plus a wake-from-sleep hook (`WM_POWERBROADCAST`).
+
+## Phase 6 candidates
+See [MISSING_FEATURES.md](MISSING_FEATURES.md) and [NICE_TO_HAVE.md](NICE_TO_HAVE.md) for gaps and enhancements to consider once Phase 5 is complete.

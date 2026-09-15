@@ -41,10 +41,13 @@ endif()
 # Core: config model, parser, the Phase 2 execution engine, and the Phase 3
 # thermal watchdog (sensor + process control + monitor daemon).
 add_library(devflow_core STATIC
+  src/config/Config.cpp
   src/config/ConfigParser.cpp
   src/pipeline/Subprocess.cpp
   src/pipeline/PipelineRunner.cpp
   src/thermal/WmiTemperatureSensor.cpp
+  src/thermal/PdhTemperatureSensor.cpp
+  src/thermal/CompositeTemperatureSensor.cpp
   src/thermal/ProcessControl.cpp
   src/thermal/ThermalMonitor.cpp
 )
@@ -54,12 +57,13 @@ target_compile_features(devflow_core PUBLIC cxx_std_20)
 
 # WMI (COM) for the thermal sensor and toolhelp for process mitigation.
 if(WIN32)
-  target_link_libraries(devflow_core PUBLIC wbemuuid ole32 oleaut32)
+  target_link_libraries(devflow_core PUBLIC wbemuuid ole32 oleaut32 pdh)
 endif()
 
 # Console application (Phase 1 deliverable).
 add_executable(devflow
   src/main.cpp
+  src/system/Autostart.cpp
   src/console/CommandLine.cpp
   src/console/ConfigPrinter.cpp
   src/console/ConsoleRunner.cpp
